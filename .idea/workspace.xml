@@ -1,7 +1,13 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
   <component name="ChangeListManager">
-    <list default="true" id="d98230c1-25d5-44e2-a2f8-d1c83580e6e3" name="Default Changelist" comment="" />
+    <list default="true" id="d98230c1-25d5-44e2-a2f8-d1c83580e6e3" name="Default Changelist" comment="">
+      <change beforePath="$PROJECT_DIR$/.idea/sonarlint/issuestore/index.pb" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/sonarlint/issuestore/index.pb" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/1-e6835f3f-ce3f-4ab7-ad76-e0798d876fdb-Vint4gesesh-deaths.jpg" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/1-e6835f3f-ce3f-4ab7-ad76-e0798d876fdb-Vint4gesesh-kills.jpg" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/main.go" beforeDir="false" afterPath="$PROJECT_DIR$/main.go" afterDir="false" />
+    </list>
     <option name="EXCLUDED_CONVERTED_TO_IGNORED" value="true" />
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -37,10 +43,14 @@
     </option>
   </component>
   <component name="GOROOT" path="$USER_HOME$/sdk/go1.13.4" />
+  <component name="Git.Settings">
+    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
+  </component>
   <component name="ProjectCodeStyleSettingsMigration">
     <option name="version" value="1" />
   </component>
   <component name="ProjectId" id="1Tc9nvlO0XFiBS1gnWU1BD0QqWU" />
+  <component name="ProjectLevelVcsManager" settingsEditedManually="true" />
   <component name="PropertiesComponent">
     <property name="DefaultGoTemplateProperty" value="Go File" />
     <property name="WebServerToolWindowFactoryState" value="false" />
@@ -179,10 +189,27 @@
       <workItem from="1573833306719" duration="7566000" />
       <workItem from="1573842124816" duration="2679000" />
       <workItem from="1574015196595" duration="2839000" />
+      <workItem from="1574018743514" duration="232000" />
+      <workItem from="1574019127858" duration="16000" />
+      <workItem from="1574019148532" duration="10374000" />
+      <workItem from="1574068652024" duration="4043000" />
     </task>
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="1" />
+  </component>
+  <component name="Vcs.Log.Tabs.Properties">
+    <option name="TAB_STATES">
+      <map>
+        <entry key="MAIN">
+          <value>
+            <State>
+              <option name="COLUMN_ORDER" />
+            </State>
+          </value>
+        </entry>
+      </map>
+    </option>
   </component>
 </project>

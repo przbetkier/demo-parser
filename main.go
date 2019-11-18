@@ -22,7 +22,6 @@ import (
 
 	dem "github.com/markus-wa/demoinfocs-golang"
 	"github.com/markus-wa/demoinfocs-golang/events"
-
 	"github.com/minio/minio-go"
 )
 
@@ -32,18 +31,21 @@ const (
 	jpegQuality = 90
 )
 
+type Profile struct {
+	Name string
+}
+
 type DemoParseRequest struct {
-	DemoUrl string
+	DemoUrl  string
 	Nickname string
-	MatchId string
+	MatchId  string
 }
 
 func main() {
 	handler := http.NewServeMux()
 
 	handler.HandleFunc("/parse", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/plain")
-		w.WriteHeader(http.StatusOK)
+		enableCors(&w)
 		decoder := json.NewDecoder(r.Body)
 		var reqBody DemoParseRequest
 
@@ -57,7 +59,11 @@ func main() {
 
 		Run(reqBody)
 
-		io.WriteString(w, "Hello world\n")
+		profile := Profile{reqBody.Nickname}
+		js, err := json.Marshal(profile)
+		w.WriteHeader(http.StatusCreated)
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(js)
 	})
 
 	if err := http.ListenAndServe(":9090", handler); err != nil {
@@ -161,16 +167,14 @@ func Run(req DemoParseRequest) {
 
 	// Parse to end
 	err = p.ParseToEnd()
-	fmt.Printf("weapons here: %s", weapons)
 	printUniqueValue(weapons)
 	fmt.Printf("%d defusals | %d bomb plants\n", defusals, bombsPlanted)
 	if err != nil {
 		panic(err)
 	}
-	fmt.Printf("Operation took: %d ms", time.Now().Sub(startDate).Milliseconds())
+	fmt.Printf("Operation took: %d ms\n", time.Now().Sub(startDate).Milliseconds())
 
 	DrawHeatMaps(nickname, matchId, DemoFileName)
-
 	Uploader(nickname, matchId)
 
 	os.Remove(DemoFileName)
@@ -229,7 +233,7 @@ func mapFromPoints(points []r2.Point, nickname string, kind string, mapName stri
 	}
 
 	// Load map overview image
-	fMap, err := os.Open(fmt.Sprintf("/Users/przemyslaw.betkier/Downloads/maps/%s.jpg", mapName))
+	fMap, err := os.Open(fmt.Sprintf("./maps/%s.jpg", mapName))
 	checkError(err)
 	imgMap, _, err := image.Decode(fMap)
 	checkError(err)
@@ -247,6 +251,7 @@ func mapFromPoints(points []r2.Point, nickname string, kind string, mapName stri
 	writer := bufio.NewWriter(outfile)
 	err = jpeg.Encode(writer, img, &jpeg.Options{Quality: jpegQuality})
 	_ = writer.Flush()
+	log.Println("Created new heatmap!")
 
 	checkError(err)
 }
@@ -258,7 +263,7 @@ func checkError(err error) {
 }
 
 func printUniqueValue(arr []string) {
-	//Create a   dictionary of values for each element
+	//Create a dictionary of values for each element
 	dict := make(map[string]int)
 	for _, num := range arr {
 		dict[num] = dict[num] + 1
@@ -268,8 +273,8 @@ func printUniqueValue(arr []string) {
 
 func Uploader(nickname string, matchId string) {
 
-	accessKey := "ZTQNROOL3FFYO7U2EJJ3"
-	secKey := "U0vfMldG4FKZrQ/818rMSexsJTbHT01R/Xn1TKdX/hc"
+	accessKey := "key"
+	secKey := "secret"
 	bucketName := "tuscan-pro"
 
 	// Initiate a client using DigitalOcean Spaces.
@@ -286,10 +291,14 @@ func Uploader(nickname string, matchId string) {
 		fmt.Sprintf("./%s-%s-kills.jpg", matchId, nickname),
 		minio.PutObjectOptions{UserMetadata: userMetaData})
 
+	log.Println("Kills HM uploaded")
+
 	_, _ = client.FPutObject(bucketName,
 		fmt.Sprintf("%s-%s-deaths.jpg", matchId, nickname),
 		fmt.Sprintf("./%s-%s-deaths.jpg", matchId, nickname),
 		minio.PutObjectOptions{UserMetadata: userMetaData})
+
+	log.Println("Deaths HM uploaded")
 }
 
 func DownloadFile(filepath string, url string) error {
@@ -344,4 +353,8 @@ func Unzip(filename string) {
 	if _, err = io.Copy(writer, reader); err != nil {
 		fmt.Println(err)
 	}
+}
+
+func enableCors(w *http.ResponseWriter) {
+	(*w).Header().Set("Access-Control-Allow-Origin", "*")
 }
