@@ -1,14 +1,12 @@
 package main
 
 import (
-	"bufio"
+	"bytes"
 	"compress/gzip"
 	"encoding/json"
 	"fmt"
-	"github.com/markus-wa/demoinfocs-golang/metadata"
-	"image"
-	"image/draw"
-	"image/jpeg"
+	"github.com/aws/aws-lambda-go/lambda"
+	"github.com/golang/geo/r2"
 	"io"
 	"log"
 	"net/http"
@@ -16,77 +14,123 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dustin/go-heatmap"
-	"github.com/dustin/go-heatmap/schemes"
-	"github.com/golang/geo/r2"
-
 	dem "github.com/markus-wa/demoinfocs-golang"
 	"github.com/markus-wa/demoinfocs-golang/events"
-	"github.com/minio/minio-go"
+	"github.com/markus-wa/demoinfocs-golang/metadata"
 )
 
-const (
-	dotSize     = 30
-	opacity     = 128
-	jpegQuality = 90
-)
-
-type Profile struct {
-	Name string
+type Request struct {
+	DemoUrl string `json:"demoUrl"`
+	MatchId string `json:"matchId"`
 }
 
-type DemoParseRequest struct {
-	DemoUrl  string
-	Nickname string
-	MatchId  string
+type Response struct {
+	Message string `json:"message"`
+}
+
+type RequestBody struct {
+	MatchId string       `json:"matchId"`
+	Data    []PlayerData `json:"data"`
+}
+
+type PlayerData struct {
+	Nickname       string        `json:"nickname"`
+	BombPlants     int           `json:"bombPlants"`
+	Defusals       int           `json:"defusals"`
+	PlayersFlashed int           `json:"playersFlashed"`
+	Kills          []PlayerKill  `json:"kills"`
+	Deaths         []PlayerDeath `json:"deaths"`
+}
+
+type PlayerDeath struct {
+	Killer         string   `json:"killer"`
+	KillerPosition r2.Point `json:"killerPosition"`
+	VictimPosition r2.Point `json:"victimPosition"`
+	WasWallbang    bool     `json:"wallbang"`
+	WasHeadshot    bool     `json:"headshot"`
+	WasEntry       bool     `json:"entry"`
+	Weapon         string   `json:"weapon"`
+}
+
+type PlayerKill struct {
+	Victim         string   `json:"victim"`
+	KillerPosition r2.Point `json:"killerPosition"`
+	VictimPosition r2.Point `json:"victimPosition"`
+	WasWallbang    bool     `json:"wallbang"`
+	WasHeadshot    bool     `json:"headshot"`
+	WasEntry       bool     `json:"entry"`
+	Weapon         string   `json:"weapon"`
+}
+
+var exists = struct{}{}
+
+type set struct {
+	m map[string]struct{}
+}
+
+func NewSet() *set {
+	s := &set{}
+	s.m = make(map[string]struct{})
+	return s
+}
+
+func (s *set) Add(value string) {
+	s.m[value] = exists
+}
+
+func (s *set) Remove(value string) {
+	delete(s.m, value)
+}
+
+func (s *set) Contains(value string) bool {
+	_, c := s.m[value]
+	return c
 }
 
 func main() {
-	handler := http.NewServeMux()
+	//Comment lambda execution for local testing
+	lambda.Start(Handler)
 
-	handler.HandleFunc("/parse", func(w http.ResponseWriter, r *http.Request) {
-		enableCors(&w)
-		decoder := json.NewDecoder(r.Body)
-		var reqBody DemoParseRequest
-
-		err := decoder.Decode(&reqBody)
-		if err != nil {
-			panic(err)
-		}
-
-		log.Println(reqBody.DemoUrl)
-		log.Println(reqBody.Nickname)
-
-		Run(reqBody)
-
-		profile := Profile{reqBody.Nickname}
-		js, err := json.Marshal(profile)
-		w.WriteHeader(http.StatusCreated)
-		w.Header().Set("Content-Type", "application/json")
-		w.Write(js)
-	})
-
-	if err := http.ListenAndServe(":9090", handler); err != nil {
-		panic(err)
-	}
+	// Uncomment that part for local testing
+	//_ = os.Setenv("API_ENDPOINT", "http://localhost:8080/tuscan-api/demo-parser")
+	//req := Request{
+	//	DemoUrl: "https://demos-europe-west2.faceit-cdn.net/csgo/ecb52fcb-60ad-4e02-9c48-92d4f39035e4.dem.gz",
+	//	MatchId: "1-e8b11096-390a-4006-8835-d15cef4b17bf",
+	//}
+	//Run(req)
 }
 
-func Run(req DemoParseRequest) {
+// Comment Handler function for local testing
+func Handler(request Request) (Response, error) {
+	Run(request)
+	return Response{
+		Message: fmt.Sprintf("Successfuly processed %s", request.MatchId)}, nil
+}
+
+func Run(req Request) {
+
+	log.Printf("Received request to parse demo data for matchId: [%s].\n", req.MatchId)
+
+	var playerDatas []PlayerData
+	nicknames := NewSet()
+
 	startDate := time.Now()
 
 	fileUrl := req.DemoUrl
-
-	zippedPath := fmt.Sprintf("%s-demo.dem.gz", req.MatchId)
+	zippedPath := fmt.Sprintf("/tmp/%s-demo.dem.gz", req.MatchId)
 
 	if err := DownloadFile(zippedPath, fileUrl); err != nil {
 		panic(err)
 	}
 
 	Unzip(zippedPath)
-	DemoFileName := strings.TrimSuffix(zippedPath, ".gz")
-	os.Remove(zippedPath)
+	if err := os.Remove(zippedPath); err != nil {
+		panic(err)
+	} else {
+		log.Printf("Successfully removed zipped file [%s]!", zippedPath)
+	}
 
-	matchId := req.MatchId
+	DemoFileName := strings.TrimSuffix(zippedPath, ".gz")
 
 	f, err := os.Open(DemoFileName)
 	checkError(err)
@@ -94,35 +138,46 @@ func Run(req DemoParseRequest) {
 	defer f.Close()
 
 	p := dem.NewParser(f)
-	nickname := req.Nickname
 
 	var header, headerErr = p.ParseHeader()
 	checkError(headerErr)
 
-	fmt.Printf("MAP: %s\n", header.MapName)
-	var kills = 0
-	var assists = 0
-	var deaths = 0
-	var headshots = 0
-	var matchStart = false
-	var bombsPlanted = 0
-	var defusals = 0
-	var firstRoundSkipped = false
+	mapMetadata := metadata.MapNameToMap[header.MapName]
 
+	log.Printf("MAP: %s\n", header.MapName)
+
+	// initial game/round values:
+	var matchStart = false
+	var firstRoundSkipped = false
+	var firstKillDone = false
+
+	p.RegisterEventHandler(func(e events.PlayerConnect) {
+		if !matchStart {
+			nicknames.Add(e.Player.Name)
+			log.Printf("[%s] connected. Adding to set.", e.Player.Name)
+		}
+	})
+
+	// Initialize empty data-object when match start
 	p.RegisterEventHandler(func(e events.MatchStart) {
 		matchStart = true
-	})
-
-	p.RegisterEventHandler(func(e events.BombPlanted) {
-		if e.Player.Name == nickname {
-			bombsPlanted++
+		if firstRoundSkipped {
+			for nickname := range nicknames.m {
+				playerDatas = append(playerDatas,
+					PlayerData{Nickname: nickname,
+						BombPlants:     0,
+						Defusals:       0,
+						PlayersFlashed: 0,
+						Kills:          []PlayerKill{},
+						Deaths:         []PlayerDeath{},
+					})
+			}
 		}
 	})
 
-	p.RegisterEventHandler(func(e events.BombDefused) {
-		if e.Player.Name == nickname {
-			defusals++
-		}
+	// Reset firstKillDone flag to track entry kills
+	p.RegisterEventHandler(func(e events.RoundStart) {
+		firstKillDone = false
 	})
 
 	p.RegisterEventHandler(func(e events.RoundEnd) {
@@ -131,129 +186,103 @@ func Run(req DemoParseRequest) {
 		}
 	})
 
-	var weapons []string
+	p.RegisterEventHandler(func(e events.BombPlanted) {
+		for i, v := range playerDatas {
+			if v.Nickname == e.Player.Name {
+				playerDatas[i].BombPlants++
+			}
+		}
+	})
 
-	// Register handler on kill events
+	p.RegisterEventHandler(func(e events.BombDefused) {
+		for i, v := range playerDatas {
+			if v.Nickname == e.Player.Name {
+				playerDatas[i].Defusals++
+			}
+		}
+	})
+
+	p.RegisterEventHandler(func(e events.PlayerFlashed) {
+		for i, v := range playerDatas {
+			if v.Nickname == e.Attacker.Name && e.Player.Team != e.Attacker.Team && e.Player.Name != "GOTV" && e.Player.FlashDuration > 2.0 {
+				playerDatas[i].PlayersFlashed++
+			}
+		}
+	})
+
 	p.RegisterEventHandler(func(e events.Kill) {
 		if matchStart && firstRoundSkipped {
-			if e.Killer.Name == nickname {
-				kills++
-				weapons = append(weapons, e.Weapon.Weapon.String())
-				var hs string
-				if e.IsHeadshot {
-					hs = " (HS)"
-					headshots++
+			killer := e.Killer.Name
+			victim := e.Victim.Name
+			xKiller, yKiller := mapMetadata.TranslateScale(e.Killer.Position.X, e.Killer.Position.Y)
+			xVictim, yVictim := mapMetadata.TranslateScale(e.Victim.Position.X, e.Victim.Position.Y)
+			killerPos := r2.Point{X: xKiller, Y: yKiller}
+			victimPos := r2.Point{X: xVictim, Y: yVictim}
+
+			for i, v := range playerDatas {
+				if v.Nickname == killer {
+
+					playerDatas[i].Kills = append(playerDatas[i].Kills,
+						PlayerKill{
+							Victim:         e.Victim.String(),
+							KillerPosition: killerPos,
+							VictimPosition: victimPos,
+							WasWallbang:    e.PenetratedObjects > 0,
+							WasHeadshot:    e.IsHeadshot,
+							WasEntry:       !firstKillDone,
+							Weapon:         e.Weapon.String(),
+						})
+
+					log.Printf("%s killed %s with %s\n", killer, victim, e.Weapon.String())
 				}
-				var wallBang string
-				if e.PenetratedObjects > 0 {
-					wallBang = " (Wallbang)"
+			}
+
+			for i, v := range playerDatas {
+				if v.Nickname == victim {
+					playerDatas[i].Deaths = append(playerDatas[i].Deaths,
+						PlayerDeath{
+							Killer:         e.Killer.String(),
+							KillerPosition: killerPos,
+							VictimPosition: victimPos,
+							WasWallbang:    e.PenetratedObjects > 0,
+							WasHeadshot:    e.IsHeadshot,
+							WasEntry:       !firstKillDone,
+							Weapon:         e.Weapon.String(),
+						})
 				}
-				fmt.Printf("%s <%v%s%s> %s\n", e.Killer, e.Weapon, hs, wallBang, e.Victim)
-				fmt.Printf("%d kills | ", e.Killer.AdditionalPlayerInformation.Kills+1)
-				fmt.Printf("%d assists | ", e.Killer.AdditionalPlayerInformation.Assists)
-				fmt.Printf("%d deaths | \n", e.Killer.AdditionalPlayerInformation.Deaths)
 			}
-			if e.Victim.Name == nickname {
-				deaths++
-				fmt.Printf("%d kills | ", e.Victim.AdditionalPlayerInformation.Kills)
-				fmt.Printf("%d assists | ", e.Victim.AdditionalPlayerInformation.Assists)
-				fmt.Printf("%d deaths | \n", e.Victim.AdditionalPlayerInformation.Deaths+1)
-			}
-			if e.Assister != nil && e.Assister.Name == nickname {
-				assists++
+
+			if !firstKillDone {
+				firstKillDone = true
 			}
 		}
 	})
 
 	// Parse to end
 	err = p.ParseToEnd()
-	printUniqueValue(weapons)
-	fmt.Printf("%d defusals | %d bomb plants\n", defusals, bombsPlanted)
 	if err != nil {
 		panic(err)
 	}
-	fmt.Printf("Operation took: %d ms\n", time.Now().Sub(startDate).Milliseconds())
 
-	DrawHeatMaps(nickname, matchId, DemoFileName)
-	Uploader(nickname, matchId)
+	for _, v := range playerDatas {
+		fmt.Print(v)
+		fmt.Print("\n")
+	}
 
 	os.Remove(DemoFileName)
-}
+	log.Printf("Successfuly removed [%s]!", DemoFileName)
 
-func DrawHeatMaps(nickname string, matchId string, DemoFileName string) {
-	f, osError := os.Open(DemoFileName)
-	checkError(osError)
-	defer f.Close()
+	payload := RequestBody{MatchId: req.MatchId, Data: playerDatas}
+	request, err := json.Marshal(payload)
 
-	p := dem.NewParser(f)
-
-	// Parse header (contains map-name etc.)
-	header, headerErr := p.ParseHeader()
-	checkError(headerErr)
-
-	mapMetadata := metadata.MapNameToMap[header.MapName]
-
-	// Register handler for player Kills and Deaths, triggered every kill is registered
-	var deathPoints []r2.Point
-	var killPoints []r2.Point
-
-	p.RegisterEventHandler(func(e events.Kill) {
-		if e.Killer.Name == nickname {
-			x, y := mapMetadata.TranslateScale(e.Killer.Position.X, e.Killer.Position.Y)
-			killPoints = append(killPoints, r2.Point{X: x, Y: y})
-		}
-
-		if e.Victim.Name == nickname {
-			x, y := mapMetadata.TranslateScale(e.Victim.Position.X, e.Victim.Position.Y)
-			deathPoints = append(deathPoints, r2.Point{X: x, Y: y})
-		}
-	})
-
-	// Parse the whole demo
-	var err = p.ParseToEnd()
-	checkError(err)
-
-	mapFromPoints(deathPoints, nickname, "deaths", header.MapName, matchId)
-	mapFromPoints(killPoints, nickname, "kills", header.MapName, matchId)
-}
-
-func mapFromPoints(points []r2.Point, nickname string, kind string, mapName string, matchId string) {
-
-	r2Bounds := r2.RectFromPoints(points...)
-	bounds := image.Rectangle{
-		Min: image.Point{X: int(r2Bounds.X.Lo), Y: int(r2Bounds.Y.Lo)},
-		Max: image.Point{X: int(r2Bounds.X.Hi), Y: int(r2Bounds.Y.Hi)},
+	resp, err := http.Post(os.Getenv("API_ENDPOINT"), "application/json", bytes.NewBuffer(request))
+	if err != nil {
+		log.Fatalln(err)
 	}
-
-	// Transform r2.Points into heatmap.DataPoints
-	var data []heatmap.DataPoint
-	for _, p := range points[1:] {
-		// Invert Y since go-heatmap expects data to be ordered from bottom to top
-		data = append(data, heatmap.P(p.X, p.Y*-1))
+	if resp.StatusCode == 201 {
+		log.Println("Submitted the result of parsed demo for tuscan.")
+		log.Printf("Operation took: %d ms\n", time.Now().Sub(startDate).Milliseconds())
 	}
-
-	// Load map overview image
-	fMap, err := os.Open(fmt.Sprintf("./maps/%s.jpg", mapName))
-	checkError(err)
-	imgMap, _, err := image.Decode(fMap)
-	checkError(err)
-
-	// Create output canvas and use map overview image as base
-	img := image.NewRGBA(imgMap.Bounds())
-	draw.Draw(img, imgMap.Bounds(), imgMap, image.Point{}, draw.Over)
-
-	// Generate and draw heatmap overlay on top of the overview
-	imgHeatmap := heatmap.Heatmap(image.Rect(0, 0, bounds.Dx(), bounds.Dy()), data, dotSize, opacity, schemes.AlphaFire)
-	draw.Draw(img, bounds, imgHeatmap, image.Point{}, draw.Over)
-
-	// Write to stdout
-	outfile, err := os.Create(fmt.Sprintf("./%s-%s-%s.jpg", matchId, nickname, kind))
-	writer := bufio.NewWriter(outfile)
-	err = jpeg.Encode(writer, img, &jpeg.Options{Quality: jpegQuality})
-	_ = writer.Flush()
-	log.Println("Created new heatmap!")
-
-	checkError(err)
 }
 
 func checkError(err error) {
@@ -262,47 +291,9 @@ func checkError(err error) {
 	}
 }
 
-func printUniqueValue(arr []string) {
-	//Create a dictionary of values for each element
-	dict := make(map[string]int)
-	for _, num := range arr {
-		dict[num] = dict[num] + 1
-	}
-	fmt.Println(dict)
-}
-
-func Uploader(nickname string, matchId string) {
-
-	accessKey := "key"
-	secKey := "secret"
-	bucketName := "tuscan-pro"
-
-	// Initiate a client using DigitalOcean Spaces.
-	client, err := minio.New("fra1.digitaloceanspaces.com", accessKey, secKey, true)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	// Set to public read
-	userMetaData := map[string]string{"x-amz-acl": "public-read"}
-
-	_, _ = client.FPutObject(bucketName,
-		fmt.Sprintf("%s-%s-kills.jpg", matchId, nickname),
-		fmt.Sprintf("./%s-%s-kills.jpg", matchId, nickname),
-		minio.PutObjectOptions{UserMetadata: userMetaData})
-
-	log.Println("Kills HM uploaded")
-
-	_, _ = client.FPutObject(bucketName,
-		fmt.Sprintf("%s-%s-deaths.jpg", matchId, nickname),
-		fmt.Sprintf("./%s-%s-deaths.jpg", matchId, nickname),
-		minio.PutObjectOptions{UserMetadata: userMetaData})
-
-	log.Println("Deaths HM uploaded")
-}
-
 func DownloadFile(filepath string, url string) error {
 
+	log.Printf("Started demo download from URL [%s] to file: [%s].", url, filepath)
 	// Get the data
 	resp, err := http.Get(url)
 	if err != nil {
@@ -319,24 +310,27 @@ func DownloadFile(filepath string, url string) error {
 
 	// Write the body to file
 	_, err = io.Copy(out, resp.Body)
+
+	log.Printf("File: [%s] created!", filepath)
 	return err
 }
 
 func Unzip(filename string) {
 
+	log.Printf("Unzipping file: [%s] ", filename)
 	if filename == "" {
-		fmt.Println("Usage : gunzip sourcefile.gz")
+		log.Println("Usage : gunzip sourcefile.gz")
 	}
 
 	gzipfile, err := os.Open(filename)
 
 	if err != nil {
-		fmt.Println(err)
+		log.Println(err)
 	}
 
 	reader, err := gzip.NewReader(gzipfile)
 	if err != nil {
-		fmt.Println(err)
+		log.Println(err)
 	}
 	defer reader.Close()
 
@@ -345,16 +339,14 @@ func Unzip(filename string) {
 	writer, err := os.Create(NewFileName)
 
 	if err != nil {
-		fmt.Println(err)
+		log.Println(err)
+	} else {
+		log.Printf("Successfully unzipped demo file to [%s].", NewFileName)
 	}
 
 	defer writer.Close()
 
 	if _, err = io.Copy(writer, reader); err != nil {
-		fmt.Println(err)
+		log.Println(err)
 	}
-}
-
-func enableCors(w *http.ResponseWriter) {
-	(*w).Header().Set("Access-Control-Allow-Origin", "*")
 }
