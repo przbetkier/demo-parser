@@ -35,29 +35,29 @@ type RequestBody struct {
 
 type PlayerData struct {
 	Nickname       string        `json:"nickname"`
-	BombPlants     int           `json:"bombPlants"`
+	BombPlants     int           `json:"plants"`
 	Defusals       int           `json:"defusals"`
-	PlayersFlashed int           `json:"playersFlashed"`
+	PlayersFlashed int           `json:"flashed"`
 	Kills          []PlayerKill  `json:"kills"`
 	Deaths         []PlayerDeath `json:"deaths"`
 }
 
 type PlayerDeath struct {
 	Killer         string   `json:"killer"`
-	KillerPosition r2.Point `json:"killerPosition"`
-	VictimPosition r2.Point `json:"victimPosition"`
-	WasWallbang    bool     `json:"wallbang"`
-	WasHeadshot    bool     `json:"headshot"`
+	KillerPosition r2.Point `json:"kPos"`
+	VictimPosition r2.Point `json:"vPos"`
+	WasWallbang    bool     `json:"wb"`
+	WasHeadshot    bool     `json:"hs"`
 	WasEntry       bool     `json:"entry"`
 	Weapon         string   `json:"weapon"`
 }
 
 type PlayerKill struct {
 	Victim         string   `json:"victim"`
-	KillerPosition r2.Point `json:"killerPosition"`
-	VictimPosition r2.Point `json:"victimPosition"`
-	WasWallbang    bool     `json:"wallbang"`
-	WasHeadshot    bool     `json:"headshot"`
+	KillerPosition r2.Point `json:"kPos"`
+	VictimPosition r2.Point `json:"vPos"`
+	WasWallbang    bool     `json:"wb"`
+	WasHeadshot    bool     `json:"hs"`
 	WasEntry       bool     `json:"entry"`
 	Weapon         string   `json:"weapon"`
 }
@@ -92,7 +92,7 @@ func main() {
 	lambda.Start(Handler)
 
 	// Uncomment that part for local testing
-	//_ = os.Setenv("API_ENDPOINT", "http://localhost:8080/tuscan-api/demo-parser")
+	//_ = os.Setenv("API_ENDPOINT", "http://localhost:8080/tuscan-api/demo-stats")
 	//req := Request{
 	//	DemoUrl: "https://demos-europe-west2.faceit-cdn.net/csgo/ecb52fcb-60ad-4e02-9c48-92d4f39035e4.dem.gz",
 	//	MatchId: "1-e8b11096-390a-4006-8835-d15cef4b17bf",
