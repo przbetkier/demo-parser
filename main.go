@@ -94,8 +94,8 @@ func main() {
 	// Uncomment that part for local testing
 	//_ = os.Setenv("API_ENDPOINT", "http://localhost:8080/tuscan-api/demo-stats")
 	//req := Request{
-	//	DemoUrl: "https://demos-europe-west2.faceit-cdn.net/csgo/ecb52fcb-60ad-4e02-9c48-92d4f39035e4.dem.gz",
-	//	MatchId: "1-e8b11096-390a-4006-8835-d15cef4b17bf",
+	//	DemoUrl: "https://demos-europe-west2.faceit-cdn.net/csgo/b21ef50d-247f-4ca4-a1b2-01d6ab2d3d9d.dem.gz",
+	//	MatchId: "1-5681cb94-b900-48ff-a66b-13eca6819268",
 	//}
 	//Run(req)
 }
@@ -262,11 +262,6 @@ func Run(req Request) {
 	err = p.ParseToEnd()
 	if err != nil {
 		panic(err)
-	}
-
-	for _, v := range playerDatas {
-		fmt.Print(v)
-		fmt.Print("\n")
 	}
 
 	os.Remove(DemoFileName)
