@@ -212,15 +212,26 @@ func Run(req Request) {
 
 	p.RegisterEventHandler(func(e events.Kill) {
 		if matchStart && firstRoundSkipped {
-			killer := e.Killer.Name
+			var killer string
+			if e.Killer != nil {
+				killer = e.Killer.Name
+			} else {
+				killer = e.Victim.Name
+			}
 			victim := e.Victim.Name
-			xKiller, yKiller := mapMetadata.TranslateScale(e.Killer.Position.X, e.Killer.Position.Y)
+			var xKiller, yKiller float64
+
+			if killer != victim {
+				xKiller, yKiller = mapMetadata.TranslateScale(e.Killer.Position.X, e.Killer.Position.Y)
+			} else {
+				xKiller, yKiller = mapMetadata.TranslateScale(e.Victim.Position.X, e.Victim.Position.Y)
+			}
 			xVictim, yVictim := mapMetadata.TranslateScale(e.Victim.Position.X, e.Victim.Position.Y)
 			killerPos := r2.Point{X: xKiller, Y: yKiller}
 			victimPos := r2.Point{X: xVictim, Y: yVictim}
 
 			for i, v := range playerDatas {
-				if v.Nickname == killer {
+				if v.Nickname == killer && killer != victim {
 
 					playerDatas[i].Kills = append(playerDatas[i].Kills,
 						PlayerKill{
@@ -241,7 +252,7 @@ func Run(req Request) {
 				if v.Nickname == victim {
 					playerDatas[i].Deaths = append(playerDatas[i].Deaths,
 						PlayerDeath{
-							Killer:         e.Killer.String(),
+							Killer:         killer,
 							KillerPosition: killerPos,
 							VictimPosition: victimPos,
 							WasWallbang:    e.PenetratedObjects > 0,
