@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/aws/aws-lambda-go/lambda"
-	"github.com/golang/geo/r2"
 	"io"
 	"log"
 	"net/http"
@@ -43,29 +42,33 @@ type PlayerData struct {
 }
 
 type PlayerDeath struct {
-	Killer         string   `json:"killer"`
-	KillerPosition r2.Point `json:"kPos"`
-	VictimPosition r2.Point `json:"vPos"`
-	WasWallbang    bool     `json:"wb"`
-	WasHeadshot    bool     `json:"hs"`
-	WasEntry       bool     `json:"entry"`
-	Weapon         string   `json:"weapon"`
+	Killer         string     `json:"killer"`
+	KillerPosition PixelPoint `json:"kPos"`
+	VictimPosition PixelPoint `json:"vPos"`
+	WasWallbang    bool       `json:"wb"`
+	WasHeadshot    bool       `json:"hs"`
+	WasEntry       bool       `json:"entry"`
+	Weapon         string     `json:"weapon"`
 }
 
 type PlayerKill struct {
-	Victim         string   `json:"victim"`
-	KillerPosition r2.Point `json:"kPos"`
-	VictimPosition r2.Point `json:"vPos"`
-	WasWallbang    bool     `json:"wb"`
-	WasHeadshot    bool     `json:"hs"`
-	WasEntry       bool     `json:"entry"`
-	Weapon         string   `json:"weapon"`
+	Victim         string     `json:"victim"`
+	KillerPosition PixelPoint `json:"kPos"`
+	VictimPosition PixelPoint `json:"vPos"`
+	WasWallbang    bool       `json:"wb"`
+	WasHeadshot    bool       `json:"hs"`
+	WasEntry       bool       `json:"entry"`
+	Weapon         string     `json:"weapon"`
 }
 
 var exists = struct{}{}
 
 type set struct {
 	m map[string]struct{}
+}
+
+type PixelPoint struct {
+	X, Y int
 }
 
 func NewSet() *set {
@@ -94,8 +97,8 @@ func main() {
 	// Uncomment that part for local testing
 	//_ = os.Setenv("API_ENDPOINT", "http://localhost:8080/tuscan-api/demo-stats")
 	//req := Request{
-	//	DemoUrl: "https://demos-europe-west2.faceit-cdn.net/csgo/b21ef50d-247f-4ca4-a1b2-01d6ab2d3d9d.dem.gz",
-	//	MatchId: "1-5681cb94-b900-48ff-a66b-13eca6819268",
+	//	DemoUrl: "https://demos-europe-west2.faceit-cdn.net/csgo/750b3959-c4ba-4b28-a5e6-37bb58cc62fa.dem.gz",
+	//	MatchId: "1-8e657be3-916c-43bb-9c27-c3a93ac688a6",
 	//}
 	//Run(req)
 }
@@ -160,8 +163,9 @@ func Run(req Request) {
 
 	// Initialize empty data-object when match start
 	p.RegisterEventHandler(func(e events.MatchStart) {
+
 		matchStart = true
-		if firstRoundSkipped {
+		if firstRoundSkipped && len(playerDatas) == 0 {
 			for nickname := range nicknames.m {
 				playerDatas = append(playerDatas,
 					PlayerData{Nickname: nickname,
@@ -227,8 +231,9 @@ func Run(req Request) {
 				xKiller, yKiller = mapMetadata.TranslateScale(e.Victim.Position.X, e.Victim.Position.Y)
 			}
 			xVictim, yVictim := mapMetadata.TranslateScale(e.Victim.Position.X, e.Victim.Position.Y)
-			killerPos := r2.Point{X: xKiller, Y: yKiller}
-			victimPos := r2.Point{X: xVictim, Y: yVictim}
+
+			killerPos := PixelPoint{X: int(xKiller), Y: int(yKiller)}
+			victimPos := PixelPoint{X: int(xVictim), Y: int(yVictim)}
 
 			for i, v := range playerDatas {
 				if v.Nickname == killer && killer != victim {
